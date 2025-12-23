@@ -257,6 +257,18 @@ class BOM(WebsiteGenerator):
 
 		return index
 
+	def before_validate(self):
+		for item in self.items:
+			if not item.conversion_factor:
+				item.conversion_factor = (
+					frappe.get_value(
+						"UOM Conversion Detail",
+						{"parent": item.item_code, "uom": item.uom},
+						"conversion_factor",
+					)
+					or 1
+				)
+
 	def validate(self):
 		self.route = frappe.scrub(self.name).replace("_", "-")
 
@@ -916,7 +928,9 @@ class BOM(WebsiteGenerator):
 				)
 
 			d.base_rate = flt(d.rate) * flt(self.conversion_rate)
-			d.amount = flt(d.rate, d.precision("rate")) * flt(d.qty, d.precision("qty"))
+			d.amount = flt(
+				flt(d.rate, d.precision("rate")) * flt(d.qty, d.precision("qty")), d.precision("amount")
+			)
 			d.base_amount = d.amount * flt(self.conversion_rate)
 			d.qty_consumed_per_unit = flt(d.stock_qty, d.precision("stock_qty")) / flt(
 				self.quantity, self.precision("quantity")
@@ -939,7 +953,10 @@ class BOM(WebsiteGenerator):
 			d.base_rate = flt(d.rate, d.precision("rate")) * flt(
 				self.conversion_rate, self.precision("conversion_rate")
 			)
-			d.amount = flt(d.rate, d.precision("rate")) * flt(d.stock_qty, d.precision("stock_qty"))
+			d.amount = flt(
+				flt(d.rate, d.precision("rate")) * flt(d.stock_qty, d.precision("stock_qty")),
+				d.precision("amount"),
+			)
 			d.base_amount = flt(d.amount, d.precision("amount")) * flt(
 				self.conversion_rate, self.precision("conversion_rate")
 			)
@@ -1105,7 +1122,7 @@ class BOM(WebsiteGenerator):
 	def validate_transfer_against(self):
 		if not self.with_operations:
 			self.transfer_material_against = "Work Order"
-		if not self.transfer_material_against and not self.is_new():
+		if not self.transfer_material_against and not self.track_semi_finished_goods and not self.is_new():
 			frappe.throw(
 				_("Setting {0} is required").format(_(self.meta.get_label("transfer_material_against"))),
 				title=_("Missing value"),
@@ -1263,6 +1280,10 @@ def get_bom_items_as_dict(
 		fetch_exploded = 0
 		group_by_cond = "group by item_code, operation_row_id, stock_uom"
 
+	if fetch_scrap_items:
+		fetch_exploded = 0
+		group_by_cond = "group by item_code"
+
 	# Did not use qty_consumed_per_unit in the query, as it leads to rounding loss
 	query = """select
 				bom_item.item_code,
@@ -1408,7 +1429,7 @@ def validate_bom_no(item, bom_no):
 
 
 @frappe.whitelist()
-def get_children(parent=None, return_all=True, fetch_phantom_items=False, is_root=False, **filters):
+def get_children(parent=None, is_root=False, **filters):
 	if not parent or parent == "BOM":
 		frappe.msgprint(_("Please select a BOM"))
 		return
@@ -1420,13 +1441,10 @@ def get_children(parent=None, return_all=True, fetch_phantom_items=False, is_roo
 		bom_doc = frappe.get_cached_doc("BOM", frappe.form_dict.parent)
 		frappe.has_permission("BOM", doc=bom_doc, throw=True)
 
-		filters = [["parent", "=", frappe.form_dict.parent]]
-		if not return_all:
-			filters.append(["is_phantom_item", "=", cint(fetch_phantom_items)])
 		bom_items = frappe.get_all(
 			"BOM Item",
 			fields=["item_code", "bom_no as value", "stock_qty", "qty", "is_phantom_item", "bom_no"],
-			filters=filters,
+			filters=[["parent", "=", frappe.form_dict.parent]],
 			order_by="idx",
 		)
 

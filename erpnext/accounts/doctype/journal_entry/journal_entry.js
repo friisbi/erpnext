@@ -201,6 +201,7 @@ frappe.ui.form.on("Journal Entry", {
 
 		erpnext.accounts.dimensions.update_dimension(frm, frm.doctype);
 		erpnext.utils.set_letter_head(frm);
+		frm.clear_table("tax_withholding_entries");
 	},
 
 	voucher_type: function (frm) {
@@ -250,6 +251,10 @@ frappe.ui.form.on("Journal Entry", {
 				update_jv_details(frm.doc, doc.accounts);
 			});
 		}
+	},
+
+	apply_tds: function (frm) {
+		frm.clear_table("tax_withholding_entries");
 	},
 });
 
@@ -720,6 +725,8 @@ $.extend(erpnext.journal_entry, {
 					}
 				},
 			});
+		} else {
+			erpnext.journal_entry.clear_fields(frm, dt, dn);
 		}
 	},
 	set_amount_on_last_row: function (frm, dt, dn) {
@@ -743,5 +750,14 @@ $.extend(erpnext.journal_entry, {
 			}
 		}
 		refresh_field("accounts");
+	},
+	clear_fields: function (frm, dt, dn) {
+		let row = locals[dt][dn];
+
+		row.party_type = null;
+		row.party = null;
+		row.bank_account = null;
+
+		frm.refresh_field("accounts");
 	},
 });

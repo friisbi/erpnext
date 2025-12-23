@@ -131,6 +131,15 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 			frm.cscript.calculate_taxes_and_totals();
 		});
 
+		// Tax Withholding Entries - Auto calculate withholding amount when taxable amount or tax rate changes
+		frappe.ui.form.on("Tax Withholding Entry", "taxable_amount", function (frm, cdt, cdn) {
+			me.calculate_withholding_amount(frm, cdt, cdn);
+		});
+
+		frappe.ui.form.on("Tax Withholding Entry", "tax_rate", function (frm, cdt, cdn) {
+			me.calculate_withholding_amount(frm, cdt, cdn);
+		});
+
 		frappe.ui.form.on(this.frm.doctype + " Item", {
 			items_add: function (frm, cdt, cdn) {
 				var item = frappe.get_doc(cdt, cdn);
@@ -581,6 +590,18 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 				me.send_sms();
 			});
 		}
+	}
+
+	calculate_withholding_amount(frm, cdt, cdn) {
+		// Calculate withholding amount: taxable_amount * tax_rate / 100
+		let row = frappe.get_doc(cdt, cdn);
+		let withholding_amount = flt(
+			(row.taxable_amount * row.tax_rate) / 100,
+			precision("withholding_amount", row)
+		);
+
+		// Set the calculated withholding amount
+		frappe.model.set_value(cdt, cdn, "withholding_amount", withholding_amount);
 	}
 
 	send_sms() {
@@ -1241,6 +1262,10 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 		this.frm.refresh_field("payment_schedule");
 	}
 
+	cost_center(doc, cdt, cdn) {
+		erpnext.utils.copy_value_in_all_rows(doc, cdt, cdn, "items", "cost_center");
+	}
+
 	due_date(doc, cdt, cdn) {
 		// due_date is to be changed, payment terms template and/or payment schedule must
 		// be removed as due_date is automatically changed based on payment terms
@@ -1697,13 +1722,13 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 		var company_currency = this.get_company_currency();
 
 		if (
-			this._last_company_currency === company_currency &&
+			this._last_currency === this.frm.doc.currency &&
 			this._last_price_list_currency === this.frm.doc.price_list_currency
 		) {
 			return;
 		}
 
-		this._last_company_currency = company_currency;
+		this._last_currency = this.frm.doc.currency;
 		this._last_price_list_currency = this.frm.doc.price_list_currency;
 
 		this.change_form_labels(company_currency);
@@ -3139,6 +3164,23 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 				() => (this.frm._last_coupon_code = this.frm.doc.coupon_code),
 			]);
 		}
+	}
+
+	setup_accounting_dimension_triggers() {
+		frappe.call({
+			method: "erpnext.accounts.doctype.accounting_dimension.accounting_dimension.get_dimensions",
+			callback: function (r) {
+				if (r.message && r.message[0]) {
+					let dimensions = r.message[0].map((d) => d.fieldname);
+					dimensions.forEach((dim) => {
+						// nosemgrep: frappe-semgrep-rules.rules.frappe-cur-frm-usage
+						cur_frm.cscript[dim] = function (doc, cdt, cdn) {
+							erpnext.utils.copy_value_in_all_rows(doc, cdt, cdn, "items", dim);
+						};
+					});
+				}
+			},
+		});
 	}
 };
 

@@ -221,6 +221,10 @@ frappe.ui.form.on("Job Card", {
 								label: __("Select Employees"),
 								options: "Job Card Time Log",
 								fieldname: "employees",
+								reqd: 1,
+								filters: {
+									status: "Active",
+								},
 							},
 							(d) => {
 								frm.events.start_timer(frm, from_time, d.employees);

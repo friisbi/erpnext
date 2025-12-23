@@ -1538,7 +1538,7 @@ class TestPurchaseInvoice(IntegrationTestCase, StockTestMixin):
 		# Create Payment Entry Against the order
 		payment_entry = get_payment_entry(dt="Purchase Order", dn=po.name)
 		payment_entry.paid_from = "Cash - _TC"
-		payment_entry.apply_tax_withholding_amount = 1
+		payment_entry.apply_tds = 1
 		payment_entry.tax_withholding_category = tax_withholding_category
 		payment_entry.save()
 		payment_entry.submit()
@@ -1591,12 +1591,26 @@ class TestPurchaseInvoice(IntegrationTestCase, StockTestMixin):
 			self.assertEqual(expected_gle[i][1], gle.amount)
 
 		payment_entry.load_from_db()
-		self.assertEqual(payment_entry.taxes[0].allocated_amount, 3000)
+		tax_allocated = sum(
+			[
+				entry.withholding_amount
+				for entry in payment_entry.get("tax_withholding_entries", [])
+				if entry.taxable_name
+			]
+		)
+		self.assertEqual(tax_allocated, 3000)
 
 		purchase_invoice.cancel()
 
 		payment_entry.load_from_db()
-		self.assertEqual(payment_entry.taxes[0].allocated_amount, 0)
+		tax_allocated = sum(
+			[
+				entry.withholding_amount
+				for entry in payment_entry.get("tax_withholding_entries", [])
+				if entry.taxable_name
+			]
+		)
+		self.assertEqual(tax_allocated, 0)
 
 	def test_purchase_gl_with_tax_withholding_tax(self):
 		company = "_Test Company"
@@ -1631,7 +1645,6 @@ class TestPurchaseInvoice(IntegrationTestCase, StockTestMixin):
 			do_not_submit=1,
 		)
 		pi.apply_tds = 1
-		pi.tax_withholding_category = tax_withholding_category
 		pi.save()
 		pi.submit()
 
@@ -2930,6 +2943,29 @@ class TestPurchaseInvoice(IntegrationTestCase, StockTestMixin):
 		pi.posting_date = add_days(today(), -1)
 		pi.save()
 		self.assertEqual(pi.discount_amount, discount_amount)
+
+	def test_returned_item_purchase_receipt(self):
+		from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import (
+			make_purchase_receipt as make_purchase_receipt_from_pi,
+		)
+
+		item = create_item("_Test Returned Item Purchase Receipt", is_stock_item=1)
+
+		pi = make_purchase_invoice(item_code=item.name, qty=5, rate=100)
+
+		return_pi = make_purchase_invoice(
+			item_code=item.name,
+			is_return=1,
+			return_against=pi.name,
+			qty=-5,
+			do_not_submit=True,
+		)
+
+		return_pi.items[0].purchase_invoice_item = pi.items[0].name
+		return_pi.submit()
+
+		pr = make_purchase_receipt_from_pi(pi.name)
+		self.assertFalse(pr.items)
 
 
 def set_advance_flag(company, flag, default_account):
