@@ -944,6 +944,9 @@ frappe.ui.form.on("Stock Entry Detail", {
 
 	item_code(frm, cdt, cdn) {
 		var d = locals[cdt][cdn];
+		// since some items may not have image, so empty the image field to avoid setting the image of previous item
+		d.image = "";
+
 		if (d.item_code) {
 			var args = {
 				item_code: d.item_code,
@@ -1287,10 +1290,11 @@ erpnext.stock.StockEntry = class StockEntry extends erpnext.stock.StockControlle
 		// Clear Work Order record from locals, because it is updated via Stock Entry
 		if (
 			this.frm.doc.work_order &&
-			in_list(
-				["Manufacture", "Material Transfer for Manufacture", "Material Consumption for Manufacture"],
-				this.frm.doc.purpose
-			)
+			[
+				"Manufacture",
+				"Material Transfer for Manufacture",
+				"Material Consumption for Manufacture",
+			].includes(this.frm.doc.purpose)
 		) {
 			frappe.model.remove_from_locals("Work Order", this.frm.doc.work_order);
 		}
